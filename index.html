@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>愛車メンテナンスメモ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-800 min-h-screen p-4 sm:p-6 font-sans">
+    <div class="max-w-3xl mx-auto space-y-6">
+        
+        <!-- ヘッダー＆車両切り替え -->
+        <header class="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+                <h1 class="text-xl font-bold tracking-wider text-blue-600 mb-1">🚗 愛車メンテナンスメモ</h1>
+                <p class="text-xs text-gray-500">施工日・走行距離から次回目安を自動算出</p>
+            </div>
+            <!-- 車両切替・管理 -->
+            <div class="flex items-center gap-2 w-full sm:w-auto flex-wrap sm:flex-nowrap">
+                <select id="car-select" class="bg-gray-50 border border-gray-300 text-gray-800 text-xs rounded-lg p-2.5 focus:outline-none focus:border-blue-500 font-bold w-full sm:w-auto">
+                </select>
+                <button id="add-car-btn" class="bg-blue-50 text-blue-600 border border-blue-200 text-xs px-3 py-2.5 rounded-lg whitespace-nowrap hover:bg-blue-100 font-medium">+ 車両追加</button>
+                <button id="delete-car-btn" class="bg-red-50 text-red-600 border border-red-200 text-xs px-3 py-2.5 rounded-lg whitespace-nowrap hover:bg-red-100 font-medium">車両削除</button>
+            </div>
+        </header>
+
+        <!-- 入力フォーム -->
+        <section class="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm space-y-4">
+            <h2 class="text-sm font-semibold text-gray-700 border-b border-gray-100 pb-2">新規メンテナンス記録</h2>
+            <form id="maint-form" class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                <div>
+                    <label class="block text-xs text-gray-600 mb-1">メンテナンス項目</label>
+                    <input type="text" id="item-name" placeholder="例：オイル交換、洗車" required class="w-full bg-gray-50 border border-gray-300 rounded-lg p-2.5 text-gray-800 focus:outline-none focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-600 mb-1">施工日</label>
+                    <input type="date" id="exec-date" required class="w-full bg-gray-50 border border-gray-300 rounded-lg p-2.5 text-gray-800 focus:outline-none focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-600 mb-1">施工時走行距離 (km)</label>
+                    <input type="number" id="exec-mileage" placeholder="例：45000" required class="w-full bg-gray-50 border border-gray-300 rounded-lg p-2.5 text-gray-800 focus:outline-none focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-600 mb-1">次回目安（期間または距離）</label>
+                    <div class="flex gap-2">
+                        <input type="number" id="interval-months" placeholder="月数（例: 6）" class="w-1/2 bg-gray-50 border border-gray-300 rounded-lg p-2.5 text-gray-800 focus:outline-none focus:border-blue-500">
+                        <input type="number" id="interval-km" placeholder="km数（例: 5000）" class="w-1/2 bg-gray-50 border border-gray-300 rounded-lg p-2.5 text-gray-800 focus:outline-none focus:border-blue-500">
+                    </div>
+                </div>
+                <div class="sm:col-span-2">
+                    <label class="block text-xs text-gray-600 mb-1">備考メモ（店舗名・ケミカル型番など）</label>
+                    <input type="text" id="item-memo" placeholder="例：オートバックス〇〇店、カインズ撥水コーティング使用" class="w-full bg-gray-50 border border-gray-300 rounded-lg p-2.5 text-gray-800 focus:outline-none focus:border-blue-500">
+                </div>
+                <div class="sm:col-span-2">
+                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2.5 rounded-lg transition-colors">記録を追加する</button>
+                </div>
+            </form>
+        </section>
+
+        <!-- 記録一覧 -->
+        <section class="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm space-y-4">
+            <div class="flex justify-between items-center border-b border-gray-100 pb-2">
+                <h2 class="text-sm font-semibold text-gray-700">記録一覧</h2>
+                <span id="car-title-display" class="text-xs text-gray-500 font-bold"></span>
+            </div>
+            <div id="record-list" class="space-y-3"></div>
+        </section>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const form = document.getElementById('maint-form');
+            const listContainer = document.getElementById('record-list');
+            const carSelect = document.getElementById('car-select');
+            const addCarBtn = document.getElementById('add-car-btn');
+            const deleteCarBtn = document.getElementById('delete-car-btn');
+            const carTitleDisplay = document.getElementById('car-title-display');
+            
+            document.getElementById('exec-date').valueAsDate = new Date();
+
+            let carData = JSON.parse(localStorage.getItem('car_maint_data_v6') || '{"cars":["マイカー"],"currentCar":"マイカー","records":{}}');
+
+            function saveAndRender() {
+                localStorage.setItem('car_maint_data_v6', JSON.stringify(carData));
+                renderCarSelect();
+                renderRecords();
+            }
+
+            function renderCarSelect() {
+                carSelect.innerHTML = carData.cars.map(car => 
+                    `<option value="${car}" ${car === carData.currentCar ? 'selected' : ''}>${car}</option>`
+                ).join('');
+                carTitleDisplay.textContent = `選択中: ${carData.currentCar}`;
+            }
+
+            carSelect.addEventListener('change', (e) => {
+                carData.currentCar = e.target.value;
+                saveAndRender();
+            });
+
+            addCarBtn.addEventListener('click', () => {
+                const name = prompt('追加する車両の名前を入力してください（例: 家族の車）');
+                if (name && !carData.cars.includes(name)) {
+                    carData.cars.push(name.trim());
+                    carData.currentCar = name.trim();
+                    saveAndRender();
+                }
+            });
+
+            // 車両削除ボタンの処理
+            deleteCarBtn.addEventListener('click', () => {
+                if (carData.cars.length <= 1) {
+                    alert('最後の車両は削除できません。');
+                    return;
+                }
+                const targetCar = carData.currentCar;
+                if (confirm(`「${targetCar}」と、この車両に登録されているすべての記録を削除しますか？`)) {
+                    // 車両リストから除外
+                    carData.cars = carData.cars.filter(car => car !== targetCar);
+                    // 記録データからも削除
+                    delete carData.records[targetCar];
+                    // 先頭の車両を選択状態にする
+                    carData.currentCar = carData.cars[0];
+                    saveAndRender();
+                }
+            });
+
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const currentCar = carData.currentCar;
+                if (!carData.records[currentCar]) {
+                    carData.records[currentCar] = [];
+                }
+
+                const newItem = {
+                    id: Date.now(),
+                    name: document.getElementById('item-name').value,
+                    date: document.getElementById('exec-date').value,
+                    mileage: Number(document.getElementById('exec-mileage').value),
+                    months: Number(document.getElementById('interval-months').value) || 0,
+                    km: Number(document.getElementById('interval-km').value) || 0,
+                    memo: document.getElementById('item-memo').value || ''
+                };
+
+                carData.records[currentCar].push(newItem);
+                saveAndRender();
+                form.reset();
+                document.getElementById('exec-date').valueAsDate = new Date();
+            });
+
+            window.deleteRecord = function(id) {
+                const currentCar = carData.currentCar;
+                carData.records[currentCar] = (carData.records[currentCar] || []).filter(r => r.id !== id);
+                saveAndRender();
+            };
+
+            function renderRecords() {
+                const currentCar = carData.currentCar;
+                const records = carData.records[currentCar] || [];
+
+                if (records.length === 0) {
+                    listContainer.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">登録された記録がありません</p>';
+                    return;
+                }
+
+                const today = new Date();
+
+                listContainer.innerHTML = records.map(r => {
+                    let nextDateStr = '-';
+                    let nextKmStr = '-';
+                    let statusBadge = '';
+
+                    // 1. 月数（期間）の設定がある場合のみ3通りのバッジ判定
+                    if (r.months > 0) {
+                        const execD = new Date(r.date);
+                        execD.setMonth(execD.getMonth() + r.months);
+                        nextDateStr = execD.toISOString().split('T')[0];
+
+                        const diffDays = Math.ceil((execD - today) / (1000 * 60 * 60 * 24));
+                        
+                        if (diffDays < 0) {
+                            statusBadge = '<span class="bg-red-100 text-red-600 px-2 py-0.5 rounded text-[10px] font-bold">🚨 期限超過</span>';
+                        } else if (diffDays <= 30) {
+                            statusBadge = '<span class="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded text-[10px] font-bold">⚠️ もうすぐ</span>';
+                        } else {
+                            statusBadge = '<span class="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[10px] font-bold">✅ 良好</span>';
+                        }
+                    }
+
+                    // 2. 距離（km）の目安計算（バッジは一切付けない）
+                    if (r.km > 0) {
+                        const targetKm = r.mileage + r.km;
+                        nextKmStr = targetKm.toLocaleString() + ' km';
+                    }
+
+                    return `
+                        <div class="bg-gray-50 border border-gray-200 rounded-xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-xs">
+                            <div class="space-y-1 w-full sm:w-auto">
+                                <div class="flex items-center gap-2">
+                                    <span class="font-bold text-gray-800 text-sm">${r.name}</span>
+                                    ${statusBadge}
+                                </div>
+                                <div class="text-gray-500">施工日: ${r.date} (${r.mileage.toLocaleString()} km)</div>
+                                <div class="text-blue-600 font-medium">次回目安: ${nextDateStr} / ${nextKmStr}</div>
+                                ${r.memo ? `<div class="text-gray-600 bg-white border border-gray-200 p-2 rounded mt-1 text-[11px]">📝 ${r.memo}</div>` : ''}
+                            </div>
+                            <button onclick="deleteRecord(${r.id})" class="bg-white border border-gray-200 hover:bg-red-50 hover:text-red-600 text-gray-500 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap self-end sm:self-center">削除</button>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            saveAndRender();
+        });
+    </script>
+</body>
+</html>
